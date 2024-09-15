@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import pytest
 
 from werobot import WeRoBot
 from werobot.parser import parse_user_msg
@@ -244,9 +245,10 @@ def test_location_select_handler():
     assert reply._args['content'] == u'瞧一瞧地理位置'
 
 
-def test_click_handler():
+@pytest.mark.asyncio()
+async def test_click_handler():
     @werobot.click
-    def scan(message):
+    async def scan(message):
         return '喵喵'
 
     message = parse_user_msg(
@@ -262,8 +264,7 @@ def test_click_handler():
         """
     )
 
-    reply = werobot.get_reply(message)
-
+    reply = await werobot.get_reply(message)
     assert isinstance(reply, TextReply)
     assert reply._args['content'] == u'喵喵'
 

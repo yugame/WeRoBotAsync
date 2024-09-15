@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 
+import uvicorn
 import warnings
-
+from fastapi import FastAPI, Request
 from werobot.config import Config, ConfigAttribute
 from werobot.client import Client
+from werobot.contrib.fastapi import make_view
 from werobot.exceptions import ConfigError
 from werobot.parser import parse_xml, process_message
 from werobot.replies import process_function_reply
@@ -546,12 +548,12 @@ class BaseRoBot(object):
             argc = len(signature(func).parameters.keys())
 
             @self.text
-            def _f(message, session=None):
+            async def _f(message, session=None):
                 _check_result = _check_content(message)
                 if _check_result:
                     if isinstance(_check_result, bool):
                         _check_result = None
-                    return func(*[message, session, _check_result][:argc])
+                    return await func(*[message, session, _check_result][:argc])
 
     def parse_message(
         self, body, timestamp=None, nonce=None, msg_signature=None
@@ -572,7 +574,7 @@ class BaseRoBot(object):
             message_dict = parse_xml(xml)
         return process_message(message_dict)
 
-    def get_reply(self, message):
+    async def get_reply(self, message):
         """
         根据 message 的内容获取 Reply 对象。
 
@@ -591,7 +593,7 @@ class BaseRoBot(object):
         try:
             for handler, args_count in handlers:
                 args = [message, session][:args_count]
-                reply = handler(*args)
+                reply = await handler(*args)
                 if session_storage and id:
                     session_storage[id] = session
                 if reply:
@@ -599,7 +601,7 @@ class BaseRoBot(object):
         except:
             self.logger.exception("Catch an exception")
 
-    def get_encrypted_reply(self, message):
+    async def get_encrypted_reply(self, message):
         """
         对一个指定的 WeRoBot Message ，获取 handlers 处理后得到的 Reply。
         如果可能，对该 Reply 进行加密。
@@ -608,7 +610,7 @@ class BaseRoBot(object):
         :param message: 一个 WeRoBot Message 实例。
         :return: reply （纯文本）
         """
-        reply = self.get_reply(message)
+        reply = await self.get_reply(message)
         if not reply:
             self.logger.warning("No handler responded message %s" % message)
             return ''
@@ -647,28 +649,27 @@ class BaseRoBot(object):
 
 class WeRoBot(BaseRoBot):
     """
-    WeRoBot 是一个继承自 BaseRoBot 的对象，在 BaseRoBot 的基础上使用了 bottle 框架，
+    WeRoBot 是一个继承自 BaseRoBot 的对象，在 BaseRoBot 的基础上使用了 FastAPI 框架，
     提供接收微信服务器发来的请求的功能。
     """
     @cached_property
     def wsgi(self):
         if not self._handlers:
             raise RuntimeError('No Handler.')
-        from bottle import Bottle
-        from werobot.contrib.bottle import make_view
 
-        app = Bottle()
-        app.route('<t:path>', ['GET', 'POST'], make_view(self))
+        app = FastAPI()
+
+        @app.api_route("/{path:path}", methods=["GET", "POST"])
+        async def handle_wechat_requests(request: Request):
+            return await make_view(self)(request)
+
         return app
 
     def run(
-        self, server=None, host=None, port=None, enable_pretty_logging=True
+        self, host=None, port=None, enable_pretty_logging=True
     ):
         """
         运行 WeRoBot。
-
-        :param server: 传递给 Bottle 框架 run 方法的参数，详情见\
-        `bottle 文档 <https://bottlepy.org/docs/dev/deployment.html#switching-the-server-backend>`_
         :param host: 运行时绑定的主机地址
         :param port: 运行时绑定的主机端口
         :param enable_pretty_logging: 是否开启 log 的输出格式优化
@@ -676,13 +677,25 @@ class WeRoBot(BaseRoBot):
         if enable_pretty_logging:
             from werobot.logger import enable_pretty_logging
             enable_pretty_logging(self.logger)
-        if server is None:
-            server = self.config["SERVER"]
         if host is None:
             host = self.config["HOST"]
         if port is None:
             port = self.config["PORT"]
         try:
-            self.wsgi.run(server=server, host=host, port=port)
+            uvicorn.run(self.wsgi, host=host, port=int(port))
         except KeyboardInterrupt:
             exit(0)
+
+
+def main():
+    robot = WeRoBot(token='formmtest')
+
+    @robot.text
+    async def hello_world():
+        return 'Hello World!'
+
+    robot.run()
+
+
+if __name__ == '__main__':
+    main()

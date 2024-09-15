@@ -1,3 +1,11 @@
-bottle
-requests
-xmltodict
+bottle~=0.13.1
+requests~=2.32.3
+xmltodict~=0.13.0
+
+pytest~=8.3.3
+responses~=0.25.3
+multipart~=0.2.5
+fastapi~=0.114.2
+setuptools~=65.5.1
+
+uvicorn~=0.30.6
